@@ -5,8 +5,7 @@ from atomreq import fetch_fpds_data
 result1 = fetch_fpds_data(
     last_mod_date="[2022/01/01, 2022/05/01]",
     agency_code="7504",
-    output_json="test_output.json",
-    output_xml="test_output.xml"
+    output_json="test_output.json"
 )
 
 # Test without file output (Lambda behavior)

@@ -22,6 +22,7 @@ This system retrieves and processes data from the Federal Procurement Data Syste
 ├── fields.json             # Field configuration
 ├── requirements.txt        # Python dependencies
 ├── deploy.sh               # Deployment script
+├── API_README.md           # API documentation
 └── tests/                  # Test scripts
     ├── test_processor.py   # Tests for data processing
     ├── test_lambda.py      # Tests for Lambda handler
@@ -89,12 +90,22 @@ aws lambda create-function --function-name fpds-api \
 5. Select the `fpds-api` Lambda function
 6. Deploy the API to a stage (e.g., "prod")
 
+## API Documentation
+
+For detailed information about using the API, please refer to the [API Documentation](API_README.md).
+
+The API provides access to FPDS contract data with the following features:
+- Query by date range and agency code
+- Limit results with pagination
+- Structured JSON response format
+- Examples for various programming languages
+
 ## API Usage
 
 Once deployed, you can access the API using the following endpoint:
 
 ```
-GET https://YOUR_API_ID.execute-api.YOUR_REGION.amazonaws.com/prod/fpds?start_date=2023/01/01&end_date=2023/01/31&agency_code=7504&max_results=50
+GET https://yf45cj1sk4.execute-api.us-east-1.amazonaws.com/prod/fpds?start_date=2023/01/01&end_date=2023/01/31&agency_code=7504&max_results=50
 ```
 
 ### Query Parameters
