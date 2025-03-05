@@ -28,6 +28,22 @@ Retrieves contract data from the FPDS system based on the provided query paramet
 | end_date     | Yes      | End date for last modified date range                      | YYYY/MM/DD | 2023/01/31  |
 | agency_code  | Yes      | Agency code to filter by                                   | String     | 7504        |
 | max_results  | No       | Maximum number of results to return (default: 10, max: 100)| Integer    | 5           |
+| award_type   | No       | Type of award to filter by                                 | String     | Purchase Order |
+| contract_type| No       | Type of contract to filter by                             | String     | IDV         |
+| min_value    | No       | Minimum contract value                                     | Number     | 10000       |
+| max_value    | No       | Maximum contract value                                     | Number     | 100000      |
+| naics_code   | No       | NAICS code to filter by                                   | String     | 541512      |
+| title_keyword| No       | Keyword to search in contract titles                      | String     | software    |
+
+##### Valid Award Types
+- BPA Call
+- Purchase Order
+- Delivery Order
+- Definitive Contract
+
+##### Valid Contract Types
+- IDV (Indefinite Delivery Vehicle)
+- Award
 
 #### Response Format
 
@@ -68,7 +84,7 @@ The API returns data in JSON format with the following structure:
 | Status Code | Description                                                |
 |-------------|------------------------------------------------------------|
 | 200         | Success                                                    |
-| 400         | Bad Request - Missing required parameters                  |
+| 400         | Bad Request - Missing or invalid parameters                |
 | 500         | Internal Server Error                                      |
 
 ## Examples
@@ -82,19 +98,19 @@ GET https://yf45cj1sk4.execute-api.us-east-1.amazonaws.com/prod/fpds?start_date=
 
 This will return up to 10 contracts (default) modified between January 1, 2023 and January 31, 2023 for agency code 7504.
 
-### Example 2: Limiting Results
+### Example 2: Advanced Query with Filters
 
 Request:
 ```
-GET https://yf45cj1sk4.execute-api.us-east-1.amazonaws.com/prod/fpds?start_date=2023/01/01&end_date=2023/01/31&agency_code=7504&max_results=2
+GET https://yf45cj1sk4.execute-api.us-east-1.amazonaws.com/prod/fpds?start_date=2023/01/01&end_date=2023/01/31&agency_code=7504&award_type=Purchase Order&min_value=50000&max_value=100000&title_keyword=software
 ```
 
-This will return up to 2 contracts modified between January 1, 2023 and January 31, 2023 for agency code 7504.
+This will return purchase orders with values between $50,000 and $100,000 that have "software" in their titles.
 
 ### Example 3: Using with cURL
 
 ```bash
-curl -X GET "https://yf45cj1sk4.execute-api.us-east-1.amazonaws.com/prod/fpds?start_date=2023/01/01&end_date=2023/01/31&agency_code=7504&max_results=5"
+curl -X GET "https://yf45cj1sk4.execute-api.us-east-1.amazonaws.com/prod/fpds?start_date=2023/01/01&end_date=2023/01/31&agency_code=7504&naics_code=541512&contract_type=Award"
 ```
 
 ### Example 4: Using with Python
@@ -108,7 +124,11 @@ params = {
     "start_date": "2023/01/01",
     "end_date": "2023/01/31",
     "agency_code": "7504",
-    "max_results": 5
+    "award_type": "Purchase Order",
+    "min_value": 50000,
+    "max_value": 100000,
+    "naics_code": "541512",
+    "title_keyword": "software"
 }
 
 response = requests.get(url, params=params)
@@ -117,7 +137,7 @@ data = response.json()
 print(f"Found {data['count']} contracts")
 for contract in data['data']:
     print(f"Title: {contract['title']}")
-    print(f"Modified: {contract['modified']}")
+    print(f"Value: ${contract['award_attributes'].get('BASE_AND_ALL_OPTIONS_VALUE', 'N/A')}")
     print("---")
 ```
 
@@ -130,7 +150,11 @@ const url = new URL('https://yf45cj1sk4.execute-api.us-east-1.amazonaws.com/prod
 url.searchParams.append('start_date', '2023/01/01');
 url.searchParams.append('end_date', '2023/01/31');
 url.searchParams.append('agency_code', '7504');
-url.searchParams.append('max_results', '5');
+url.searchParams.append('award_type', 'Purchase Order');
+url.searchParams.append('min_value', '50000');
+url.searchParams.append('max_value', '100000');
+url.searchParams.append('naics_code', '541512');
+url.searchParams.append('title_keyword', 'software');
 
 fetch(url)
   .then(response => response.json())
@@ -138,26 +162,25 @@ fetch(url)
     console.log(`Found ${data.count} contracts`);
     data.data.forEach(contract => {
       console.log(`Title: ${contract.title}`);
-      console.log(`Modified: ${contract.modified}`);
+      console.log(`Value: $${contract.award_attributes['BASE_AND_ALL_OPTIONS_VALUE'] || 'N/A'}`);
       console.log('---');
     });
   })
   .catch(error => console.error('Error:', error));
 ```
 
-## Common Agency Codes
+## Common NAICS Codes
 
-Here are some common agency codes that can be used with the API:
+Here are some common NAICS codes for IT and professional services:
 
-| Agency Code | Agency Name                                   |
-|-------------|-----------------------------------------------|
-| 7504        | Office of the Inspector General               |
-| 7500        | Department of Health and Human Services       |
-| 9700        | Department of Defense                         |
-| 1700        | Department of the Navy                        |
-| 1900        | Department of State                           |
-| 6900        | Department of Transportation                  |
-| 7000        | Department of Homeland Security               |
+| NAICS Code | Description                                   |
+|------------|-----------------------------------------------|
+| 541512     | Computer Systems Design Services              |
+| 541511     | Custom Computer Programming Services          |
+| 541513     | Computer Facilities Management Services       |
+| 541519     | Other Computer Related Services              |
+| 541611     | Administrative Management Consulting Services |
+| 541618     | Other Management Consulting Services         |
 
 ## Error Handling
 
@@ -172,14 +195,24 @@ If you omit a required parameter, the API will return a 400 Bad Request response
 }
 ```
 
+### Invalid Parameter Values
+
+If you provide an invalid value for a parameter, the API will return a 400 Bad Request response with valid options:
+
+```json
+{
+  "error": "Invalid award_type",
+  "valid_values": ["BPA Call", "Purchase Order", "Delivery Order", "Definitive Contract"]
+}
+```
+
 ### Internal Server Error
 
 If the API encounters an unexpected error, it will return a 500 Internal Server Error response:
 
 ```json
 {
-  "error": "Internal server error",
-  "message": "Error details"
+  "error": "Internal server error"
 }
 ```
 
@@ -192,6 +225,12 @@ The API currently does not implement rate limiting, but excessive usage may be m
 For questions or issues with the API, please contact the development team at [your-email@example.com].
 
 ## Changelog
+
+### v1.1.0 (2025-03-03)
+- Added support for filtering by award type, contract type, and contract value range
+- Added support for NAICS code filtering
+- Added support for title keyword search
+- Updated documentation with new parameters and examples
 
 ### v1.0.0 (2025-03-02)
 - Initial release of the FPDS API 

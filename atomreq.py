@@ -68,7 +68,7 @@ def flatten_xml(elem, parent_key="", sep="."):
     return items
 
 def fetch_fpds_data(last_mod_date, agency_code, max_results=10,
-                    output_json=None):
+                    output_json=None, additional_params=None):
     """
     Fetch data from FPDS ATOM feed with pagination support.
     
@@ -77,6 +77,12 @@ def fetch_fpds_data(last_mod_date, agency_code, max_results=10,
         agency_code: Agency code to filter by
         max_results: Maximum number of results to return (note: API returns max 10 per request)
         output_json: Optional path to save JSON output (for local testing)
+        additional_params: Optional dict containing additional search parameters:
+            - award_type: Type of award (BPA Call, Purchase Order, etc.)
+            - contract_type: Type of contract (IDV or Award)
+            - value_range: Tuple of (min_value, max_value) for contract value range
+            - naics_code: NAICS code to filter by
+            - title_keyword: Keyword to search in contract titles
         
     Returns:
         list: Processed FPDS data
@@ -87,13 +93,35 @@ def fetch_fpds_data(last_mod_date, agency_code, max_results=10,
     
     print(f"Fetching up to {max_results} records ({num_pages} pages of {page_size} records each)")
     
+    # Build the base query string
+    query = f"LAST_MOD_DATE:[{last_mod_date[0]},{last_mod_date[1]}]+AGENCY_CODE:{agency_code}"
+    
+    # Add additional search parameters if provided
+    if additional_params:
+        if 'award_type' in additional_params:
+            query += f"+AWARD_TYPE:\"{additional_params['award_type']}\""
+        
+        if 'contract_type' in additional_params:
+            query += f"+CONTRACT_TYPE:\"{additional_params['contract_type']}\""
+        
+        if 'value_range' in additional_params:
+            min_val, max_val = additional_params['value_range']
+            query += f"+BASE_AND_ALL_OPTIONS_VALUE:[{min_val},{max_val}]"
+        
+        if 'naics_code' in additional_params:
+            query += f"+NAICS_CODE:{additional_params['naics_code']}"
+        
+        if 'title_keyword' in additional_params:
+            # Add title keyword search
+            query += f"+TITLE:\"{additional_params['title_keyword']}\""
+    
     for page in range(num_pages):
         start_index = page * page_size
         
         # Construct FPDS ATOM feed URL with pagination
         fpds_url = (
             f"https://www.fpds.gov/ezsearch/FEEDS/ATOM?FEEDNAME=PUBLIC&VERSION=1.5"
-            f"&q=LAST_MOD_DATE:[{last_mod_date[0]},{last_mod_date[1]}]+AGENCY_CODE:{agency_code}"
+            f"&q={query}"
             f"&start={start_index}&maxResults={page_size}"
         )
         
