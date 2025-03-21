@@ -33,13 +33,60 @@ Usage example (API Gateway):
 
 import json
 import logging
+import boto3
+from datetime import datetime
 from atomreq import fetch_fpds_data
 from field_utils import load_fields_config
 from data_processor import process_fpds_data
+import re
 
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# Initialize DynamoDB client
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('fpds_contracts')
+
+def store_in_dynamodb(processed_data):
+    """
+    Store processed FPDS data in DynamoDB
+    """
+    logger.info("Attempting to store data in DynamoDB")
+    logger.info("First item structure: %s", json.dumps(processed_data[0] if processed_data else "No data"))
+    
+    with table.batch_writer() as batch:
+        for item in processed_data:
+            # Extract contract ID from title using regex
+            title = item.get('title', '')
+            
+            # First try to find the contract ID after keywords like "ORDER" or "CONTRACT"
+            contract_id_match = re.search(r'(?:ORDER|CONTRACT|BPA CALL|PURCHASE ORDER)\s+([0-9]{10}[A-Z][0-9]+|HHSG[0-9A-Z]+)', title)
+            
+            if contract_id_match:
+                contract_id = contract_id_match.group(1)  # Use group(1) to get the actual ID, not the keyword
+                logger.info(f"Found contract ID {contract_id} in title: {title}")
+            else:
+                # If not found after keywords, try to find it anywhere in the title
+                contract_id_match = re.search(r'([0-9]{10}[A-Z][0-9]+|HHSG[0-9A-Z]+)', title)
+                if contract_id_match:
+                    contract_id = contract_id_match.group(1)
+                    logger.info(f"Found contract ID {contract_id} in title without keyword: {title}")
+                else:
+                    contract_id = f"unknown_{datetime.now().timestamp()}"
+                    logger.warning(f"Could not find contract ID in title: {title}")
+            
+            last_modified = item.get('modified', datetime.now().isoformat())
+            
+            # Prepare the item for DynamoDB
+            dynamo_item = {
+                'contract_id': contract_id,
+                'last_modified_date': last_modified,
+                'data': item
+            }
+            
+            # Write to DynamoDB
+            batch.put_item(Item=dynamo_item)
 
 def api_handler(event, context):
     """
@@ -144,6 +191,9 @@ def api_handler(event, context):
         fields_config = load_fields_config()
         processed_data = process_fpds_data(data, fields_config)
         
+        # Store in DynamoDB
+        store_in_dynamodb(processed_data)
+        
         # Return success response
         return {
             'statusCode': 200,
@@ -152,6 +202,7 @@ def api_handler(event, context):
                 'Access-Control-Allow-Origin': '*'
             },
             'body': json.dumps({
+                'message': 'FPDS data processed and stored in DynamoDB successfully',
                 'count': len(processed_data),
                 'data': processed_data
             })
@@ -177,7 +228,8 @@ def api_handler(event, context):
                 'Access-Control-Allow-Origin': '*'
             },
             'body': json.dumps({
-                'error': 'Internal server error'
+                'error': 'Internal server error',
+                'details': str(e)
             })
         }
 

@@ -1,14 +1,17 @@
 # FPDS Data Processing System
 
-This system retrieves and processes data from the Federal Procurement Data System (FPDS) ATOM feed. It can be deployed as an AWS Lambda function with API Gateway integration to provide a RESTful API for accessing FPDS data.
+This system retrieves and processes data from the Federal Procurement Data System (FPDS) ATOM feed and stores it in Amazon DynamoDB. It is deployed as an AWS Lambda function with API Gateway integration to provide a RESTful API for accessing FPDS data.
 
 ## Features
 
 - Fetches data from the FPDS ATOM feed with pagination support
 - Processes and validates field values
+- Stores contract data in Amazon DynamoDB for persistence
 - Provides both Lambda function and API Gateway integration
 - Includes comprehensive test scripts
 - Supports deployment to AWS Lambda
+- Extracts and stores contract IDs for easy reference
+- Handles various contract types (BPA Calls, Delivery Orders, Purchase Orders, etc.)
 
 ## Project Structure
 
@@ -22,12 +25,19 @@ This system retrieves and processes data from the Federal Procurement Data Syste
 ├── fields.json             # Field configuration
 ├── requirements.txt        # Python dependencies
 ├── deploy.sh               # Deployment script
-├── API_README.md           # API documentation
-└── tests/                  # Test scripts
-    ├── test_processor.py   # Tests for data processing
-    ├── test_lambda.py      # Tests for Lambda handler
-    └── test_api.py         # Tests for API Gateway handler
+├── API_README.md          # API documentation
+├── test_api.py            # API testing script
+└── tests/                 # Test scripts
+    ├── test_processor.py  # Tests for data processing
+    └── test_lambda.py     # Tests for Lambda handler
 ```
+
+## Prerequisites
+
+- Python 3.11 or higher
+- AWS Account with appropriate permissions
+- AWS CLI configured with your credentials
+- DynamoDB table named `fpds_contracts` created in your AWS account
 
 ## Installation
 
@@ -36,105 +46,140 @@ This system retrieves and processes data from the Federal Procurement Data Syste
    ```
    pip install -r requirements.txt
    ```
+3. Configure AWS credentials:
+   ```
+   aws configure
+   ```
+
+## DynamoDB Setup
+
+1. Create the DynamoDB table:
+   ```
+   aws dynamodb create-table \
+     --table-name fpds_contracts \
+     --attribute-definitions AttributeName=contract_id,AttributeType=S \
+     --key-schema AttributeName=contract_id,KeyType=HASH \
+     --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
+   ```
+
+2. Verify table creation:
+   ```
+   aws dynamodb describe-table --table-name fpds_contracts
+   ```
 
 ## Testing
 
-Run the test scripts to verify functionality:
+1. Configure test parameters in `test_api.py`:
+   ```python
+   params = {
+       "start_date": "YYYY/MM/DD",
+       "end_date": "YYYY/MM/DD",
+       "agency_code": "7504",
+       "max_results": "100"
+   }
+   ```
 
-```
-python tests/test_processor.py
-python tests/test_lambda.py
-python tests/test_api.py
-```
+2. Run the test script:
+   ```
+   python test_api.py
+   ```
 
 ## Deployment
 
-### Prepare Deployment Package
+### Required AWS Resources
 
-Run the deployment script to create a Lambda deployment package:
-
-```
-./deploy.sh
-```
-
-This will create a zip file at `deployment/lambda_package.zip` containing all necessary files.
+1. Lambda Function
+2. API Gateway
+3. DynamoDB Table
+4. IAM Role with permissions for:
+   - Lambda execution
+   - DynamoDB read/write
+   - CloudWatch Logs
 
 ### Deploy to AWS Lambda
 
-#### Option 1: Direct Lambda Function
+1. Create the Lambda function:
+   ```
+   aws lambda create-function --function-name fpds-api \
+     --runtime python3.11 \
+     --handler api_handler.api_handler \
+     --role YOUR_LAMBDA_EXECUTION_ROLE_ARN \
+     --timeout 30 \
+     --memory-size 256 \
+     --zip-file fileb://deployment/lambda_package.zip
+   ```
 
-```
-aws lambda create-function --function-name fpds-data-processor \
-  --runtime python3.11 \
-  --handler lambda_handler.lambda_handler \
-  --role YOUR_LAMBDA_EXECUTION_ROLE_ARN \
-  --zip-file fileb://deployment/lambda_package.zip
-```
-
-#### Option 2: API Gateway Integration
-
-```
-aws lambda create-function --function-name fpds-api \
-  --runtime python3.11 \
-  --handler api_handler.api_handler \
-  --role YOUR_LAMBDA_EXECUTION_ROLE_ARN \
-  --zip-file fileb://deployment/lambda_package.zip
-```
-
-### Set Up API Gateway
-
-1. Create a new REST API in API Gateway
-2. Create a resource (e.g., `/fpds`)
-3. Create a GET method for the resource
-4. Configure the integration type as "Lambda Function"
-5. Select the `fpds-api` Lambda function
-6. Deploy the API to a stage (e.g., "prod")
-
-## API Documentation
-
-For detailed information about using the API, please refer to the [API Documentation](API_README.md).
-
-The API provides access to FPDS contract data with the following features:
-- Query by date range and agency code
-- Limit results with pagination
-- Structured JSON response format
-- Examples for various programming languages
+2. Update function configuration if needed:
+   ```
+   aws lambda update-function-configuration \
+     --function-name fpds-api \
+     --timeout 30 \
+     --memory-size 256
+   ```
 
 ## API Usage
 
-Once deployed, you can access the API using the following endpoint:
+### Endpoint
 
 ```
-GET https://yf45cj1sk4.execute-api.us-east-1.amazonaws.com/prod/fpds?start_date=2023/01/01&end_date=2023/01/31&agency_code=7504&max_results=50
+GET https://yf45cj1sk4.execute-api.us-east-1.amazonaws.com/prod/fpds
 ```
 
 ### Query Parameters
 
+Required:
 - `start_date`: Start date for last modified date range (YYYY/MM/DD)
 - `end_date`: End date for last modified date range (YYYY/MM/DD)
-- `agency_code`: Agency code to filter by
-- `max_results`: (Optional) Maximum number of results to return (default: 10)
+- `agency_code`: Agency code to filter by (e.g., "7504")
+
+Optional:
+- `max_results`: Maximum number of results to return (default: 10)
+- `award_type`: Filter by award type ("BPA Call", "Purchase Order", "Delivery Order", "Definitive Contract")
+- `contract_type`: Filter by contract type ("IDV" or "Award")
+- `min_value`: Minimum contract value
+- `max_value`: Maximum contract value
+- `naics_code`: NAICS code to filter by
+- `title_keyword`: Keyword to search in contract titles
 
 ### Response Format
 
 ```json
 {
-  "count": 30,
+  "message": "FPDS data processed and stored in DynamoDB successfully",
+  "count": 82,
   "data": [
     {
-      "title": "Contract Award",
+      "title": "Contract Title",
       "link": "https://www.fpds.gov/ezsearch/...",
-      "modified": "2023-01-15T12:34:56Z",
-      "award_attributes": {
-        "key1": "value1",
-        "key2": "value2",
-        ...
-      }
-    },
-    ...
+      "modified": "2024-03-21T14:30:00Z"
+    }
   ]
 }
 ```
+
+## Viewing Data in DynamoDB
+
+1. Access the AWS Console: https://console.aws.amazon.com
+2. Navigate to DynamoDB service
+3. Click on "Tables" in the left sidebar
+4. Select the `fpds_contracts` table
+5. Click "Explore table items" to view the data
+6. Use the search/filter options to find specific contracts
+
+### Data Structure in DynamoDB
+
+Each item in the table contains:
+- `contract_id`: Unique identifier extracted from the contract title
+- `last_modified_date`: When the contract was last modified
+- `data`: Object containing contract details (title, link, modified date)
+
+## Troubleshooting
+
+1. Check CloudWatch Logs for Lambda function errors
+2. Verify API Gateway configuration
+3. Ensure DynamoDB table exists and has correct permissions
+4. Check Lambda function timeout and memory settings
+5. Verify IAM roles have necessary permissions
 
 ## License
 

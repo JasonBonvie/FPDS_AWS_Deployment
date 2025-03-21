@@ -34,9 +34,40 @@ Usage example (AWS Lambda):
 
 import json
 import os
+import boto3
+from datetime import datetime
 from atomreq import fetch_fpds_data
 from field_utils import load_fields_config
 from data_processor import process_fpds_data
+
+# Initialize DynamoDB client
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('fpds_contracts')
+
+def store_in_dynamodb(processed_data):
+    """
+    Store processed FPDS data in DynamoDB
+    """
+    with table.batch_writer() as batch:
+        for item in processed_data:
+            # Extract the contract ID and last modified date
+            contract_id = item.get('entry.content.award.awardID.awardContractID.PIID', 
+                                 item.get('entry.content.award.awardID.referencedIDVID.PIID', 
+                                 f"unknown_{datetime.now().timestamp()}"))
+            
+            last_modified = item.get('entry.modified', 
+                                   item.get('entry.content.award.transactionInformation.lastModifiedDate',
+                                   datetime.now().isoformat()))
+            
+            # Prepare the item for DynamoDB
+            dynamo_item = {
+                'contract_id': contract_id,
+                'last_modified_date': last_modified,
+                'data': item
+            }
+            
+            # Write to DynamoDB
+            batch.put_item(Item=dynamo_item)
 
 def lambda_handler(event, context):
     """
@@ -72,6 +103,9 @@ def lambda_handler(event, context):
         
         # Process data with field configuration
         processed_data = process_fpds_data(data, fields_config)
+        
+        # Store in DynamoDB
+        store_in_dynamodb(processed_data)
         
         # Check if S3 storage is requested
         s3_bucket = event.get('s3_bucket')
@@ -112,7 +146,8 @@ def lambda_handler(event, context):
             return {
                 'statusCode': 200,
                 'body': json.dumps({
-                    'message': 'FPDS data processed successfully',
+                    'message': 'FPDS data processed and stored in DynamoDB successfully',
+                    'count': len(processed_data),
                     'data': processed_data
                 })
             }
